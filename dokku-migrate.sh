@@ -58,7 +58,11 @@ Usage:
   dokku-migrate restore <servername> [appname]
          Restore all apps (or a single app if provided) to the specified server.
   dokku-migrate list <servername>
-         List apps on the specified remote server.
+         List remote apps on the specified server.
+  dokku-migrate list-servers
+         List all servers in the configuration.
+  dokku-migrate add
+         Interactively add a new server to the configuration.
   dokku-migrate backup-db <dbtype> <servername> <dbname>
          Backup a database (dbtype: postgres or mongo) from the specified server.
   dokku-migrate restore-db <dbtype> <servername> <dbname>
@@ -209,6 +213,48 @@ restore_db() {
   fi
 }
 
+list_servers() {
+  echo "Listing servers from configuration (${CONFIG_FILE}):"
+  jq -r '.servers | to_entries[] | "\(.key): host=\(.value.host), user=\(.value.user), ssh_key=\(.value.ssh_key)"' "${CONFIG_FILE}"
+}
+
+add_server() {
+  echo "Adding new server to configuration (${CONFIG_FILE})"
+  # Prompt for server details
+  read -p "Enter server name (no spaces; use underscore for spaces): " new_name
+  if [ -z "$new_name" ]; then
+      echo "Server name cannot be empty."
+      exit 1
+  fi
+
+  read -p "Enter host (IP or domain): " new_host
+  if [ -z "$new_host" ]; then
+      echo "Host cannot be empty."
+      exit 1
+  fi
+
+  read -p "Enter user [ubuntu]: " new_user
+  new_user=${new_user:-ubuntu}
+
+  read -p "Enter ssh_key path [~/.ssh/id_rsa]: " new_key
+  new_key=${new_key:-"~/.ssh/id_rsa"}
+
+  # Expand tilde for new_key if necessary
+  new_key="${new_key/#\~/$HOME}"
+
+  # Use jq to add the new server entry. Save to a temporary file and then move.
+  tmp_config=$(mktemp)
+  jq --arg name "$new_name" \
+     --arg host "$new_host" \
+     --arg user "$new_user" \
+     --arg ssh_key "$new_key" \
+     '.servers[$name] = {"host": $host, "user": $user, "ssh_key": $ssh_key}' \
+     "${CONFIG_FILE}" > "${tmp_config}"
+
+  mv "${tmp_config}" "${CONFIG_FILE}"
+  echo "New server added as '${new_name}'"
+}
+
 # Main command logic
 case "$ACTION" in
   backup)
@@ -240,8 +286,15 @@ case "$ACTION" in
     fi
     ;;
   list)
+    # For backward compatibility: list remote apps for the given server.
     load_server_config "$SERVERNAME"
     ssh -i "${SSH_KEY}" "${REMOTE_USER}@${REMOTE_HOST}" "dokku apps:list"
+    ;;
+  list-servers)
+    list_servers
+    ;;
+  add)
+    add_server
     ;;
   backup-db)
     # Usage: dokku-migrate.sh backup-db <dbtype> <servername> <dbname>
