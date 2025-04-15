@@ -72,7 +72,7 @@ EOF
 }
 
 # Ensure we have at least 2 arguments.
-if [ "$#" -lt 2 ]; then
+if [ "$#" -lt 1 ]; then
   usage
 fi
 
@@ -104,16 +104,16 @@ backup_app() {
   echo "Backing up app ${app}..."
 
   # Backup VHOST and ENV files
-  ssh -i "${SSH_KEY}" "${REMOTE_USER}@${REMOTE_HOST}" "cat /home/dokku/${app}/VHOST" > "${local_app_dir}/VHOST" 2>/dev/null || echo "# No VHOST file" > "${local_app_dir}/VHOST"
-  ssh -i "${SSH_KEY}" "${REMOTE_USER}@${REMOTE_HOST}" "cat /home/dokku/${app}/ENV" > "${local_app_dir}/ENV" 2>/dev/null || echo "# No ENV file" > "${local_app_dir}/ENV"
+  ssh "${REMOTE_USER}@${REMOTE_HOST}" "cat /home/dokku/${app}/VHOST" > "${local_app_dir}/VHOST" 2>/dev/null || echo "# No VHOST file" > "${local_app_dir}/VHOST"
+  ssh "${REMOTE_USER}@${REMOTE_HOST}" "cat /home/dokku/${app}/ENV" > "${local_app_dir}/ENV" 2>/dev/null || echo "# No ENV file" > "${local_app_dir}/ENV"
 
   # Backup persistent storage if exists
   echo "Checking persistent storage for ${app}..."
-  ssh -i "${SSH_KEY}" "${REMOTE_USER}@${REMOTE_HOST}" "if [ -d /var/lib/dokku/data/storage/${app} ]; then tar -czf /tmp/${app}_storage.tar.gz -C /var/lib/dokku/data/storage/${app} .; fi"
-  if scp -i "${SSH_KEY}" "${REMOTE_USER}@${REMOTE_HOST}:/tmp/${app}_storage.tar.gz" "${local_app_dir}/storage.tar.gz" 2>/dev/null; then
+  ssh "${REMOTE_USER}@${REMOTE_HOST}" "if [ -d /var/lib/dokku/data/storage/${app} ]; then tar -czf /tmp/${app}_storage.tar.gz -C /var/lib/dokku/data/storage/${app} .; fi"
+  if scp "${REMOTE_USER}@${REMOTE_HOST}:/tmp/${app}_storage.tar.gz" "${local_app_dir}/storage.tar.gz" 2>/dev/null; then
     echo "Persistent storage for ${app} backed up."
     # Optionally, clean up remote temp file:
-    ssh -i "${SSH_KEY}" "${REMOTE_USER}@${REMOTE_HOST}" "rm -f /tmp/${app}_storage.tar.gz"
+    ssh "${REMOTE_USER}@${REMOTE_HOST}" "rm -f /tmp/${app}_storage.tar.gz"
   else
     echo "No persistent storage found for ${app}."
   fi
@@ -135,28 +135,28 @@ restore_app() {
   echo "Restoring app ${app}..."
 
   # Create the app on the remote server
-  ssh -i "${SSH_KEY}" "${REMOTE_USER}@${REMOTE_HOST}" "dokku apps:create ${app}"
+  ssh "${REMOTE_USER}@${REMOTE_HOST}" "dokku apps:create ${app}"
 
   # Restore VHOST and ENV (configure domains and environment variables)
   if [ -f "${local_app_dir}/VHOST" ]; then
     VHOST=$(cat "${local_app_dir}/VHOST")
     if [ -n "$VHOST" ]; then
-      ssh -i "${SSH_KEY}" "${REMOTE_USER}@${REMOTE_HOST}" "dokku domains:add ${app} ${VHOST}"
+      ssh "${REMOTE_USER}@${REMOTE_HOST}" "dokku domains:add ${app} ${VHOST}"
     fi
   fi
   if [ -f "${local_app_dir}/ENV" ]; then
     ENV_VARS=$(cat "${local_app_dir}/ENV")
     if [ -n "$ENV_VARS" ]; then
-      ssh -i "${SSH_KEY}" "${REMOTE_USER}@${REMOTE_HOST}" "dokku config:set ${app} ${ENV_VARS}"
-      ssh -i "${SSH_KEY}" "${REMOTE_USER}@${REMOTE_HOST}" "dokku config:unset ${app} GIT_REV"
+      ssh "${REMOTE_USER}@${REMOTE_HOST}" "dokku config:set ${app} ${ENV_VARS}"
+      ssh "${REMOTE_USER}@${REMOTE_HOST}" "dokku config:unset ${app} GIT_REV"
     fi
   fi
 
   # Restore persistent storage if backup exists
   if [ -f "${local_app_dir}/storage.tar.gz" ]; then
     echo "Restoring persistent storage for ${app}..."
-    scp -i "${SSH_KEY}" "${local_app_dir}/storage.tar.gz" "${REMOTE_USER}@${REMOTE_HOST}:/tmp/${app}_storage.tar.gz"
-    ssh -i "${SSH_KEY}" "${REMOTE_USER}@${REMOTE_HOST}" "mkdir -p /var/lib/dokku/data/storage/${app} && tar -xzf /tmp/${app}_storage.tar.gz -C /var/lib/dokku/data/storage/${app} && sudo chown -R nobody:nogroup /var/lib/dokku/data/storage/${app} && rm -f /tmp/${app}_storage.tar.gz"
+    scp "${local_app_dir}/storage.tar.gz" "${REMOTE_USER}@${REMOTE_HOST}:/tmp/${app}_storage.tar.gz"
+    ssh "${REMOTE_USER}@${REMOTE_HOST}" "mkdir -p /var/lib/dokku/data/storage/${app} && tar -xzf /tmp/${app}_storage.tar.gz -C /var/lib/dokku/data/storage/${app} && sudo chown -R nobody:nogroup /var/lib/dokku/data/storage/${app} && rm -f /tmp/${app}_storage.tar.gz"
   fi
 }
 
@@ -172,17 +172,17 @@ backup_db() {
   if [ "$dbtype" == "postgres" ]; then
     remote_backup_file="${remote_backup_file}.sql"
     local_backup_file="${local_db_dir}/${dbname}_backup.sql"
-    ssh -i "${SSH_KEY}" "${REMOTE_USER}@${REMOTE_HOST}" "dokku postgres:export ${dbname} > ${remote_backup_file}"
+    ssh "${REMOTE_USER}@${REMOTE_HOST}" "dokku postgres:export ${dbname} > ${remote_backup_file}"
   elif [ "$dbtype" == "mongo" ]; then
     remote_backup_file="${remote_backup_file}.archive"
     local_backup_file="${local_db_dir}/${dbname}_backup.archive"
-    ssh -i "${SSH_KEY}" "${REMOTE_USER}@${REMOTE_HOST}" "dokku mongo:export ${dbname} > ${remote_backup_file}"
+    ssh "${REMOTE_USER}@${REMOTE_HOST}" "dokku mongo:export ${dbname} > ${remote_backup_file}"
   else
     echo "Unsupported dbtype: ${dbtype}"
     exit 1
   fi
-  scp -i "${SSH_KEY}" "${REMOTE_USER}@${REMOTE_HOST}:${remote_backup_file}" "${local_backup_file}"
-  ssh -i "${SSH_KEY}" "${REMOTE_USER}@${REMOTE_HOST}" "rm -f ${remote_backup_file}"
+  scp "${REMOTE_USER}@${REMOTE_HOST}:${remote_backup_file}" "${local_backup_file}"
+  ssh "${REMOTE_USER}@${REMOTE_HOST}" "rm -f ${remote_backup_file}"
   echo "${dbtype} backup for ${dbname} saved as ${local_backup_file}"
 }
 
@@ -205,11 +205,11 @@ restore_db() {
     exit 1
   fi
   echo "Restoring ${dbtype} database ${dbname} to server ${SERVERNAME}..."
-  scp -i "${SSH_KEY}" "${local_backup_file}" "${REMOTE_USER}@${REMOTE_HOST}:/tmp/"
+  scp "${local_backup_file}" "${REMOTE_USER}@${REMOTE_HOST}:/tmp/"
   if [ "$dbtype" == "postgres" ]; then
-    ssh -i "${SSH_KEY}" "${REMOTE_USER}@${REMOTE_HOST}" "dokku postgres:import ${dbname} < /tmp/$(basename ${local_backup_file}) && rm -f /tmp/$(basename ${local_backup_file})"
+    ssh "${REMOTE_USER}@${REMOTE_HOST}" "dokku postgres:import ${dbname} < /tmp/$(basename ${local_backup_file}) && rm -f /tmp/$(basename ${local_backup_file})"
   elif [ "$dbtype" == "mongo" ]; then
-    ssh -i "${SSH_KEY}" "${REMOTE_USER}@${REMOTE_HOST}" "dokku mongo:import ${dbname} < /tmp/$(basename ${local_backup_file}) && rm -f /tmp/$(basename ${local_backup_file})"
+    ssh "${REMOTE_USER}@${REMOTE_HOST}" "dokku mongo:import ${dbname} < /tmp/$(basename ${local_backup_file}) && rm -f /tmp/$(basename ${local_backup_file})"
   fi
 }
 
@@ -236,19 +236,12 @@ add_server() {
   read -p "Enter user [ubuntu]: " new_user
   new_user=${new_user:-ubuntu}
 
-  read -p "Enter ssh_key path [~/.ssh/id_rsa]: " new_key
-  new_key=${new_key:-"~/.ssh/id_rsa"}
-
-  # Expand tilde for new_key if necessary
-  new_key="${new_key/#\~/$HOME}"
-
   # Use jq to add the new server entry. Save to a temporary file and then move.
   tmp_config=$(mktemp)
   jq --arg name "$new_name" \
      --arg host "$new_host" \
      --arg user "$new_user" \
-     --arg ssh_key "$new_key" \
-     '.servers[$name] = {"host": $host, "user": $user, "ssh_key": $ssh_key}' \
+     '.servers[$name] = {"host": $host, "user": $user}' \
      "${CONFIG_FILE}" > "${tmp_config}"
 
   mv "${tmp_config}" "${CONFIG_FILE}"
@@ -263,7 +256,7 @@ case "$ACTION" in
     mkdir -p "${LOCAL_SERVER_DIR}/apps"
     if [ -z "$TARGET_NAME" ]; then
       echo "Fetching app list from ${REMOTE_HOST}..."
-      APP_LIST=$(ssh -i "${SSH_KEY}" "${REMOTE_USER}@${REMOTE_HOST}" "dokku apps:list" | tr -d '\r')
+      APP_LIST=$(ssh "${REMOTE_USER}@${REMOTE_HOST}" "dokku apps:list" | grep -v '^====' | awk '{print $1}')
       for app in $APP_LIST; do
         backup_app "$app" "${LOCAL_SERVER_DIR}"
       done
@@ -288,7 +281,7 @@ case "$ACTION" in
   list)
     # For backward compatibility: list remote apps for the given server.
     load_server_config "$SERVERNAME"
-    ssh -i "${SSH_KEY}" "${REMOTE_USER}@${REMOTE_HOST}" "dokku apps:list"
+    ssh "${REMOTE_USER}@${REMOTE_HOST}" "dokku apps:list"
     ;;
   list-servers)
     list_servers
